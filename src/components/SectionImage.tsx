@@ -10,6 +10,9 @@ interface SectionImageProps {
 }
 
 export function SectionImage({ name, imageUrl, index, onPreview, onDownload }: SectionImageProps) {
+  // Handle base64 images or regular URLs
+  const imgSrc = imageUrl.startsWith('data:') ? imageUrl : imageUrl;
+
   return (
     <div 
       className="group relative rounded-xl overflow-hidden bg-card border border-border/50 hover:border-primary/30 transition-all duration-300 animate-slide-up"
@@ -18,9 +21,10 @@ export function SectionImage({ name, imageUrl, index, onPreview, onDownload }: S
       {/* Image container */}
       <div className="relative aspect-video overflow-hidden bg-secondary/30">
         <img
-          src={imageUrl}
+          src={imgSrc}
           alt={name}
           className="w-full h-full object-cover object-top transition-transform duration-500 group-hover:scale-105"
+          loading="lazy"
         />
         
         {/* Overlay on hover */}
@@ -30,14 +34,29 @@ export function SectionImage({ name, imageUrl, index, onPreview, onDownload }: S
             size="icon"
             onClick={onPreview}
             className="transform translate-y-4 group-hover:translate-y-0 transition-transform duration-300"
+            title="Visualizar"
           >
             <Eye className="w-4 h-4" />
           </Button>
           <Button
             variant="secondary"
             size="icon"
-            onClick={onPreview}
+            onClick={() => {
+              // Open in full screen
+              const newWindow = window.open();
+              if (newWindow) {
+                newWindow.document.write(`
+                  <html>
+                    <head><title>${name}</title></head>
+                    <body style="margin:0;background:#0a0a0f;display:flex;justify-content:center;align-items:flex-start;min-height:100vh;">
+                      <img src="${imgSrc}" style="max-width:100%;height:auto;" />
+                    </body>
+                  </html>
+                `);
+              }
+            }}
             className="transform translate-y-4 group-hover:translate-y-0 transition-transform duration-300 delay-75"
+            title="Tela cheia"
           >
             <Maximize2 className="w-4 h-4" />
           </Button>
