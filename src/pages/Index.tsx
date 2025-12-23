@@ -1,25 +1,14 @@
-import { useState, useEffect } from "react";
-import { Scissors, Image, Zap, Shield, Sparkles } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Scissors, Image, Zap, Shield, Sparkles, AlertCircle } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { UrlInput } from "@/components/UrlInput";
 import { FeatureCard } from "@/components/FeatureCard";
 import { ProcessingState } from "@/components/ProcessingState";
 import { ResultsGrid } from "@/components/ResultsGrid";
 import { useToast } from "@/hooks/use-toast";
+import { captureSite, generateSectionImages, type Section } from "@/lib/api/capture";
 
-type AppState = "input" | "processing" | "results";
-
-// Mock data for demonstration
-const mockSections = [
-  { id: "1", name: "Hero / Topo", imageUrl: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=800&q=80" },
-  { id: "2", name: "Estatísticas", imageUrl: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=800&q=80" },
-  { id: "3", name: "Apresentação", imageUrl: "https://images.unsplash.com/photo-1522542550221-31fd8575f649?w=800&q=80" },
-  { id: "4", name: "Funcionalidades", imageUrl: "https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=800&q=80" },
-  { id: "5", name: "Cards de Serviços", imageUrl: "https://images.unsplash.com/photo-1553877522-43269d4ea984?w=800&q=80" },
-  { id: "6", name: "Depoimentos", imageUrl: "https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=800&q=80" },
-  { id: "7", name: "FAQ", imageUrl: "https://images.unsplash.com/photo-1434626881859-194d67b2b86f?w=800&q=80" },
-  { id: "8", name: "Rodapé", imageUrl: "https://images.unsplash.com/photo-1557804506-669a67965ba0?w=800&q=80" },
-];
+type AppState = "input" | "processing" | "results" | "error";
 
 const features = [
   {
@@ -30,7 +19,7 @@ const features = [
   {
     icon: Image,
     title: "Alta Resolução",
-    description: "Captura em 2x DPR mínimo para imagens cristalinas.",
+    description: "Captura em alta definição para imagens cristalinas.",
   },
   {
     icon: Zap,
@@ -48,44 +37,80 @@ export default function Index() {
   const [appState, setAppState] = useState<AppState>("input");
   const [currentUrl, setCurrentUrl] = useState("");
   const [processingStep, setProcessingStep] = useState(0);
-  const [sections, setSections] = useState(mockSections);
+  const [sections, setSections] = useState<Section[]>([]);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
-  const handleSubmit = (url: string) => {
+  const handleSubmit = useCallback(async (url: string) => {
     setCurrentUrl(url);
     setAppState("processing");
     setProcessingStep(0);
-  };
+    setIsLoading(true);
+    setErrorMessage("");
 
-  const handleReset = () => {
+    // Simulate processing steps while waiting for API
+    const stepInterval = setInterval(() => {
+      setProcessingStep((prev) => Math.min(prev + 1, 2));
+    }, 1500);
+
+    try {
+      const result = await captureSite(url);
+
+      clearInterval(stepInterval);
+
+      if (!result.success || !result.screenshot) {
+        setErrorMessage(result.error || "Não foi possível capturar o site");
+        setAppState("error");
+        toast({
+          title: "Erro na captura",
+          description: result.error || "Não foi possível capturar o site",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Move to final step
+      setProcessingStep(3);
+
+      // Generate section images from the screenshot
+      const sectionImages = generateSectionImages(
+        result.screenshot,
+        result.sections || [{ id: "1", name: "Página Completa", type: "full" }]
+      );
+
+      setSections(sectionImages);
+
+      setTimeout(() => {
+        setAppState("results");
+        toast({
+          title: "Captura concluída!",
+          description: `${sectionImages.length} seções foram identificadas e capturadas.`,
+        });
+      }, 500);
+    } catch (error) {
+      clearInterval(stepInterval);
+      console.error("Error capturing site:", error);
+      setErrorMessage("Erro ao processar a solicitação");
+      setAppState("error");
+      toast({
+        title: "Erro",
+        description: "Ocorreu um erro ao capturar o site",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [toast]);
+
+  const handleReset = useCallback(() => {
     setAppState("input");
     setCurrentUrl("");
     setProcessingStep(0);
-  };
-
-  // Simulate processing steps
-  useEffect(() => {
-    if (appState === "processing") {
-      const interval = setInterval(() => {
-        setProcessingStep((prev) => {
-          if (prev >= 3) {
-            clearInterval(interval);
-            setTimeout(() => {
-              setAppState("results");
-              toast({
-                title: "Captura concluída!",
-                description: `${mockSections.length} seções foram identificadas e capturadas.`,
-              });
-            }, 500);
-            return prev;
-          }
-          return prev + 1;
-        });
-      }, 1500);
-
-      return () => clearInterval(interval);
-    }
-  }, [appState, toast]);
+    setSections([]);
+    setErrorMessage("");
+    setIsLoading(false);
+  }, []);
 
   return (
     <div className="min-h-screen bg-background">
@@ -129,7 +154,7 @@ export default function Index() {
                   análise, redesign ou documentação.
                 </p>
 
-                <UrlInput onSubmit={handleSubmit} isLoading={false} />
+                <UrlInput onSubmit={handleSubmit} isLoading={isLoading} />
               </div>
 
               {/* Features */}
@@ -183,6 +208,26 @@ export default function Index() {
           {appState === "processing" && (
             <div className="py-12">
               <ProcessingState currentStep={processingStep} url={currentUrl} />
+            </div>
+          )}
+
+          {appState === "error" && (
+            <div className="py-12 max-w-xl mx-auto text-center animate-fade-in">
+              <div className="flex items-center justify-center w-20 h-20 rounded-2xl bg-destructive/10 text-destructive mx-auto mb-6">
+                <AlertCircle className="w-10 h-10" />
+              </div>
+              <h2 className="text-2xl font-bold text-foreground mb-3">
+                Erro ao Capturar
+              </h2>
+              <p className="text-muted-foreground mb-6">
+                {errorMessage || "Não foi possível capturar o site. Verifique a URL e tente novamente."}
+              </p>
+              <button
+                onClick={handleReset}
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 transition-colors"
+              >
+                Tentar Novamente
+              </button>
             </div>
           )}
 
