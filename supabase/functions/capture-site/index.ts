@@ -57,9 +57,10 @@ Deno.serve(async (req) => {
     }
 
     console.log('Capturing URL:', formattedUrl);
+    console.log('capture-site version: 2025-12-25-v2-scrape');
 
-    // Firecrawl v2 API - use formats array with screenshot type
-    const response = await fetch('https://api.firecrawl.dev/v1/scrape', {
+    // Firecrawl v2 API
+    const response = await fetch('https://api.firecrawl.dev/v2/scrape', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -67,7 +68,10 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         url: formattedUrl,
-        formats: ['screenshot', 'html'],
+        formats: [
+          'html',
+          { type: 'screenshot', fullPage: true, quality: 100, viewport: { width: 1440, height: 900 } },
+        ],
         onlyMainContent: false,
         waitFor: 5000,
       }),
