@@ -49,8 +49,44 @@ export async function captureSite(url: string): Promise<CaptureResult> {
   }
 }
 
-// Generate section images from the screenshot
-export function generateSectionImages(
+// Load an image from base64 or URL
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+// Slice a portion of the image and return as base64
+function sliceImage(
+  img: HTMLImageElement,
+  startY: number,
+  height: number,
+  canvas: HTMLCanvasElement,
+  ctx: CanvasRenderingContext2D
+): string {
+  // Ensure we don't exceed image bounds
+  const actualHeight = Math.min(height, img.height - startY);
+  if (actualHeight <= 0) return '';
+  
+  canvas.width = img.width;
+  canvas.height = actualHeight;
+  
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(
+    img,
+    0, startY, img.width, actualHeight, // source
+    0, 0, img.width, actualHeight        // destination
+  );
+  
+  return canvas.toDataURL('image/png', 1.0);
+}
+
+// Generate section images by actually slicing the screenshot
+export async function generateSectionImages(
   screenshot: string,
   sections: Array<{ 
     id: string; 
@@ -59,16 +95,121 @@ export function generateSectionImages(
     order: number;
     confidence: number;
   }>
-): Section[] {
-  // For now, we use the full screenshot for each section
-  // This simulates section detection - in production you would
-  // use image processing to actually slice the screenshot
-  return sections.map((section) => ({
-    ...section,
-    imageUrl: screenshot,
-    order: section.order ?? 0,
-    confidence: section.confidence ?? 100,
-  }));
+): Promise<Section[]> {
+  if (!screenshot || sections.length === 0) {
+    return sections.map((section) => ({
+      ...section,
+      imageUrl: screenshot || '',
+      order: section.order ?? 0,
+      confidence: section.confidence ?? 100,
+    }));
+  }
+
+  try {
+    // Load the full screenshot
+    const img = await loadImage(screenshot);
+    const totalHeight = img.height;
+    const totalWidth = img.width;
+    
+    console.log(`Screenshot loaded: ${totalWidth}x${totalHeight}px, ${sections.length} sections`);
+    
+    // Create canvas for slicing
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    if (!ctx) {
+      throw new Error('Could not create canvas context');
+    }
+
+    // Define section height distribution
+    // Different section types typically have different heights
+    const sectionHeightWeights: Record<string, number> = {
+      hero: 1.2,
+      navigation: 0.3,
+      stats: 0.6,
+      about: 1.0,
+      features: 1.2,
+      pricing: 1.0,
+      cards: 1.0,
+      testimonials: 0.8,
+      process: 1.0,
+      portfolio: 1.2,
+      team: 0.8,
+      partners: 0.5,
+      faq: 0.8,
+      blog: 1.0,
+      contact: 0.7,
+      footer: 0.4,
+    };
+
+    // Calculate total weight
+    let totalWeight = 0;
+    sections.forEach(section => {
+      totalWeight += sectionHeightWeights[section.type] || 0.8;
+    });
+
+    // Minimum section height (ensures no section is too small)
+    const minSectionHeight = 200;
+    
+    // Calculate height per weight unit
+    const heightPerWeight = totalHeight / totalWeight;
+    
+    // Generate sliced images
+    let currentY = 0;
+    const slicedSections: Section[] = [];
+
+    for (let i = 0; i < sections.length; i++) {
+      const section = sections[i];
+      const weight = sectionHeightWeights[section.type] || 0.8;
+      
+      // Calculate section height
+      let sectionHeight = Math.round(heightPerWeight * weight);
+      
+      // Ensure minimum height
+      sectionHeight = Math.max(sectionHeight, minSectionHeight);
+      
+      // For the last section, take whatever is left
+      if (i === sections.length - 1) {
+        sectionHeight = totalHeight - currentY;
+      }
+      
+      // Skip if we're past the image
+      if (currentY >= totalHeight) {
+        slicedSections.push({
+          ...section,
+          imageUrl: '',
+          order: section.order ?? i,
+          confidence: section.confidence ?? 100,
+        });
+        continue;
+      }
+      
+      // Slice the image
+      const slicedImageUrl = sliceImage(img, currentY, sectionHeight, canvas, ctx);
+      
+      slicedSections.push({
+        ...section,
+        imageUrl: slicedImageUrl || screenshot, // Fallback to full screenshot
+        order: section.order ?? i,
+        confidence: section.confidence ?? 100,
+      });
+      
+      console.log(`Section ${i + 1} (${section.name}): y=${currentY}, height=${sectionHeight}`);
+      
+      currentY += sectionHeight;
+    }
+
+    return slicedSections;
+  } catch (error) {
+    console.error('Error slicing screenshot:', error);
+    // Fallback: return all sections with full screenshot
+    return sections.map((section, i) => ({
+      ...section,
+      imageUrl: screenshot,
+      order: section.order ?? i,
+      confidence: section.confidence ?? 100,
+    }));
+  }
 }
 
 // Convert base64 to blob for download
@@ -96,6 +237,8 @@ export async function createSectionsZip(
   
   for (let i = 0; i < sections.length; i++) {
     const section = sections[i];
+    if (!section.imageUrl) continue;
+    
     const fileName = `${String(i + 1).padStart(2, '0')}-${sanitizeFileName(section.name)}.png`;
     
     try {
@@ -129,11 +272,17 @@ function sanitizeFileName(name: string): string {
 
 // Download a single section image
 export function downloadSection(section: Section): void {
+  if (!section.imageUrl) return;
+  
   const fileName = `${sanitizeFileName(section.name)}.png`;
   const link = document.createElement('a');
   
   if (section.imageUrl.startsWith('data:')) {
     link.href = section.imageUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   } else {
     // For URLs, we need to fetch and create a blob
     fetch(section.imageUrl)
@@ -146,13 +295,7 @@ export function downloadSection(section: Section): void {
         document.body.removeChild(link);
         URL.revokeObjectURL(link.href);
       });
-    return;
   }
-  
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
 }
 
 // Download all sections as ZIP
