@@ -80,7 +80,9 @@ export default function Index() {
         order: s.order ?? i,
         confidence: s.confidence ?? 100,
       }));
-      const sectionImages = generateSectionImages(
+      
+      // Await the async slicing operation
+      const sectionImages = await generateSectionImages(
         result.screenshot,
         normalizedSections
       );
