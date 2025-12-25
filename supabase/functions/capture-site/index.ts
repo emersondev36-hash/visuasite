@@ -18,6 +18,14 @@ interface ScrapeResult {
   error?: string;
 }
 
+interface DetectedSection {
+  id: string;
+  name: string;
+  type: string;
+  order: number;
+  confidence: number;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -59,9 +67,9 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         url: formattedUrl,
-        formats: ['screenshot', 'markdown', 'html'],
+        formats: ['screenshot', 'html'],
         onlyMainContent: false,
-        waitFor: 3000, // Wait for dynamic content
+        waitFor: 5000, // Wait for dynamic content to load
         screenshot: true,
         fullPageScreenshot: true,
       }),
@@ -80,11 +88,12 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Analyze the HTML to detect sections
+    // Analyze the HTML to detect sections with improved algorithm
     const html = data.data?.html || '';
-    const sections = detectSections(html, data.data?.screenshot || '');
+    const sections = detectSectionsAdvanced(html);
     
     console.log('Capture successful, detected sections:', sections.length);
+    console.log('Section details:', sections.map(s => `${s.name} (${s.confidence}%)`));
 
     return new Response(
       JSON.stringify({
@@ -94,6 +103,7 @@ Deno.serve(async (req) => {
         metadata: {
           title: data.data?.metadata?.title || 'Site',
           url: formattedUrl,
+          capturedAt: new Date().toISOString(),
         }
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -108,50 +118,224 @@ Deno.serve(async (req) => {
   }
 });
 
-// Function to detect sections from HTML structure
-function detectSections(html: string, screenshot: string): Array<{
-  id: string;
-  name: string;
-  type: string;
-}> {
-  const sections: Array<{ id: string; name: string; type: string }> = [];
-  
-  // Define section patterns to detect
+// Advanced section detection with confidence scoring
+function detectSectionsAdvanced(html: string): DetectedSection[] {
+  const sections: DetectedSection[] = [];
+  const foundTypes = new Set<string>();
+  let order = 0;
+
+  // Define section patterns with weights for confidence scoring
   const sectionPatterns = [
-    { regex: /<header[^>]*>|<nav[^>]*>|class="[^"]*hero[^"]*"|class="[^"]*banner[^"]*"/gi, name: 'Hero / Topo', type: 'hero' },
-    { regex: /class="[^"]*stat[^"]*"|class="[^"]*metric[^"]*"|class="[^"]*number[^"]*"/gi, name: 'Estatísticas', type: 'stats' },
-    { regex: /class="[^"]*about[^"]*"|class="[^"]*intro[^"]*"|class="[^"]*presentation[^"]*"/gi, name: 'Apresentação', type: 'about' },
-    { regex: /class="[^"]*feature[^"]*"|class="[^"]*service[^"]*"|class="[^"]*benefit[^"]*"/gi, name: 'Funcionalidades', type: 'features' },
-    { regex: /class="[^"]*card[^"]*"|class="[^"]*grid[^"]*"|class="[^"]*pricing[^"]*"/gi, name: 'Cards / Grid', type: 'cards' },
-    { regex: /class="[^"]*testimon[^"]*"|class="[^"]*review[^"]*"|class="[^"]*quote[^"]*"/gi, name: 'Depoimentos', type: 'testimonials' },
-    { regex: /class="[^"]*process[^"]*"|class="[^"]*step[^"]*"|class="[^"]*how[^"]*"/gi, name: 'Processo', type: 'process' },
-    { regex: /class="[^"]*portfolio[^"]*"|class="[^"]*gallery[^"]*"|class="[^"]*work[^"]*"/gi, name: 'Portfólio', type: 'portfolio' },
-    { regex: /class="[^"]*faq[^"]*"|class="[^"]*question[^"]*"|class="[^"]*accordion[^"]*"/gi, name: 'FAQ', type: 'faq' },
-    { regex: /class="[^"]*contact[^"]*"|class="[^"]*form[^"]*"|class="[^"]*cta[^"]*"/gi, name: 'Contato / CTA', type: 'contact' },
-    { regex: /<footer[^>]*>|class="[^"]*footer[^"]*"/gi, name: 'Rodapé', type: 'footer' },
+    { 
+      patterns: [
+        /<header[^>]*>/gi,
+        /class="[^"]*\b(hero|banner|jumbotron|masthead|main-header)\b[^"]*"/gi,
+        /id="[^"]*\b(hero|banner|top)\b[^"]*"/gi,
+        /<section[^>]*class="[^"]*\b(hero)\b/gi,
+      ],
+      name: 'Hero / Topo', 
+      type: 'hero',
+      priority: 1,
+    },
+    { 
+      patterns: [
+        /class="[^"]*\b(nav|navigation|menu|navbar)\b[^"]*"/gi,
+        /<nav[^>]*>/gi,
+      ],
+      name: 'Navegação', 
+      type: 'navigation',
+      priority: 2,
+    },
+    { 
+      patterns: [
+        /class="[^"]*\b(stats?|statistic|metrics?|numbers?|counter|achievement)\b[^"]*"/gi,
+        /class="[^"]*\b(kpi|data-point)\b[^"]*"/gi,
+      ],
+      name: 'Estatísticas', 
+      type: 'stats',
+      priority: 3,
+    },
+    { 
+      patterns: [
+        /class="[^"]*\b(about|intro|introduction|presentation|company|who-we-are)\b[^"]*"/gi,
+        /id="[^"]*\b(about|intro)\b[^"]*"/gi,
+      ],
+      name: 'Apresentação', 
+      type: 'about',
+      priority: 4,
+    },
+    { 
+      patterns: [
+        /class="[^"]*\b(features?|services?|benefits?|solutions?|capabilities)\b[^"]*"/gi,
+        /id="[^"]*\b(features?|services?)\b[^"]*"/gi,
+      ],
+      name: 'Funcionalidades', 
+      type: 'features',
+      priority: 5,
+    },
+    { 
+      patterns: [
+        /class="[^"]*\b(pricing|plans?|packages?|tiers?)\b[^"]*"/gi,
+        /id="[^"]*\b(pricing|plans?)\b[^"]*"/gi,
+      ],
+      name: 'Preços', 
+      type: 'pricing',
+      priority: 6,
+    },
+    { 
+      patterns: [
+        /class="[^"]*\b(cards?|grid|items?|products?|catalog)\b[^"]*"/gi,
+      ],
+      name: 'Cards / Grid', 
+      type: 'cards',
+      priority: 7,
+    },
+    { 
+      patterns: [
+        /class="[^"]*\b(testimonials?|reviews?|quotes?|feedback|clients?-say)\b[^"]*"/gi,
+        /id="[^"]*\b(testimonials?|reviews?)\b[^"]*"/gi,
+      ],
+      name: 'Depoimentos', 
+      type: 'testimonials',
+      priority: 8,
+    },
+    { 
+      patterns: [
+        /class="[^"]*\b(process|steps?|how-it-works?|workflow|timeline|roadmap)\b[^"]*"/gi,
+        /id="[^"]*\b(process|how-it-works?)\b[^"]*"/gi,
+      ],
+      name: 'Processo', 
+      type: 'process',
+      priority: 9,
+    },
+    { 
+      patterns: [
+        /class="[^"]*\b(portfolio|gallery|works?|projects?|showcase|case-stud)\b[^"]*"/gi,
+        /id="[^"]*\b(portfolio|gallery|works?)\b[^"]*"/gi,
+      ],
+      name: 'Portfólio', 
+      type: 'portfolio',
+      priority: 10,
+    },
+    { 
+      patterns: [
+        /class="[^"]*\b(team|members?|people|staff|employees?)\b[^"]*"/gi,
+        /id="[^"]*\b(team)\b[^"]*"/gi,
+      ],
+      name: 'Equipe', 
+      type: 'team',
+      priority: 11,
+    },
+    { 
+      patterns: [
+        /class="[^"]*\b(partners?|clients?|logos?|brands?|trusted-by)\b[^"]*"/gi,
+      ],
+      name: 'Parceiros / Clientes', 
+      type: 'partners',
+      priority: 12,
+    },
+    { 
+      patterns: [
+        /class="[^"]*\b(faq|questions?|accordion|help)\b[^"]*"/gi,
+        /id="[^"]*\b(faq|questions?)\b[^"]*"/gi,
+        /<details[^>]*>/gi,
+      ],
+      name: 'FAQ', 
+      type: 'faq',
+      priority: 13,
+    },
+    { 
+      patterns: [
+        /class="[^"]*\b(blog|posts?|articles?|news|updates?)\b[^"]*"/gi,
+        /id="[^"]*\b(blog|news)\b[^"]*"/gi,
+      ],
+      name: 'Blog / Notícias', 
+      type: 'blog',
+      priority: 14,
+    },
+    { 
+      patterns: [
+        /class="[^"]*\b(contact|form|cta|call-to-action|get-started|subscribe|newsletter)\b[^"]*"/gi,
+        /id="[^"]*\b(contact|cta)\b[^"]*"/gi,
+        /<form[^>]*>/gi,
+      ],
+      name: 'Contato / CTA', 
+      type: 'contact',
+      priority: 15,
+    },
+    { 
+      patterns: [
+        /<footer[^>]*>/gi,
+        /class="[^"]*\b(footer|site-footer|bottom)\b[^"]*"/gi,
+        /id="[^"]*\b(footer)\b[^"]*"/gi,
+      ],
+      name: 'Rodapé', 
+      type: 'footer',
+      priority: 99,
+    },
   ];
 
-  // Always add hero
-  sections.push({ id: crypto.randomUUID(), name: 'Hero / Topo', type: 'hero' });
+  // Always add hero first
+  sections.push({ 
+    id: crypto.randomUUID(), 
+    name: 'Hero / Topo', 
+    type: 'hero',
+    order: order++,
+    confidence: 100,
+  });
+  foundTypes.add('hero');
 
   // Check for each pattern in HTML
   for (const pattern of sectionPatterns) {
-    if (pattern.type !== 'hero' && pattern.regex.test(html)) {
-      // Avoid duplicates
-      if (!sections.some(s => s.type === pattern.type)) {
-        sections.push({
-          id: crypto.randomUUID(),
-          name: pattern.name,
-          type: pattern.type,
-        });
+    if (pattern.type === 'hero') continue; // Already added
+
+    let matchCount = 0;
+    for (const regex of pattern.patterns) {
+      const matches = html.match(regex);
+      if (matches) {
+        matchCount += matches.length;
       }
+    }
+
+    if (matchCount > 0 && !foundTypes.has(pattern.type)) {
+      // Calculate confidence based on match count
+      const confidence = Math.min(100, 50 + matchCount * 15);
+      
+      sections.push({
+        id: crypto.randomUUID(),
+        name: pattern.name,
+        type: pattern.type,
+        order: order++,
+        confidence,
+      });
+      foundTypes.add(pattern.type);
     }
   }
 
-  // Always add footer if not present
-  if (!sections.some(s => s.type === 'footer')) {
-    sections.push({ id: crypto.randomUUID(), name: 'Rodapé', type: 'footer' });
+  // Ensure footer is last if present
+  const footerIndex = sections.findIndex(s => s.type === 'footer');
+  if (footerIndex !== -1) {
+    const footer = sections.splice(footerIndex, 1)[0];
+    footer.order = 999;
+    sections.push(footer);
+  } else {
+    // Add footer if not found
+    sections.push({ 
+      id: crypto.randomUUID(), 
+      name: 'Rodapé', 
+      type: 'footer',
+      order: 999,
+      confidence: 80,
+    });
   }
+
+  // Sort by order
+  sections.sort((a, b) => a.order - b.order);
+
+  // Re-assign sequential order numbers
+  sections.forEach((section, index) => {
+    section.order = index;
+  });
 
   return sections;
 }

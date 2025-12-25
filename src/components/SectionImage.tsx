@@ -1,88 +1,105 @@
-import { Download, Eye, Maximize2 } from "lucide-react";
+import { Download, Maximize2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface SectionImageProps {
   name: string;
   imageUrl: string;
   index: number;
+  confidence?: number;
   onPreview: () => void;
   onDownload: () => void;
 }
 
-export function SectionImage({ name, imageUrl, index, onPreview, onDownload }: SectionImageProps) {
-  // Handle base64 images or regular URLs
-  const imgSrc = imageUrl.startsWith('data:') ? imageUrl : imageUrl;
+export function SectionImage({
+  name,
+  imageUrl,
+  index,
+  confidence = 100,
+  onPreview,
+  onDownload,
+}: SectionImageProps) {
+  // Determine confidence color
+  const getConfidenceColor = () => {
+    if (confidence >= 80) return 'text-emerald-400';
+    if (confidence >= 60) return 'text-amber-400';
+    return 'text-orange-400';
+  };
 
   return (
-    <div 
-      className="group relative rounded-xl overflow-hidden bg-card border border-border/50 hover:border-primary/30 transition-all duration-300 animate-slide-up"
-      style={{ animationDelay: `${index * 100}ms` }}
+    <div
+      className="group relative overflow-hidden rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm transition-all duration-300 hover:border-primary/50 hover:shadow-xl hover:shadow-primary/10 animate-slide-up"
+      style={{ animationDelay: `${index * 50}ms` }}
     >
       {/* Image container */}
       <div className="relative aspect-video overflow-hidden bg-secondary/30">
-        <img
-          src={imgSrc}
-          alt={name}
-          className="w-full h-full object-cover object-top transition-transform duration-500 group-hover:scale-105"
-          loading="lazy"
-        />
-        
-        {/* Overlay on hover */}
-        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center gap-3">
+        {imageUrl ? (
+          <img
+            src={imageUrl}
+            alt={name}
+            className="h-full w-full object-cover object-top transition-transform duration-500 group-hover:scale-105"
+            loading="lazy"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center">
+            <div className="text-muted-foreground">Carregando...</div>
+          </div>
+        )}
+
+        {/* Gradient overlay */}
+        <div className="absolute inset-0 bg-gradient-to-t from-card via-card/20 to-transparent opacity-60" />
+
+        {/* Actions overlay */}
+        <div className="absolute inset-0 flex items-center justify-center gap-3 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
           <Button
+            size="sm"
             variant="secondary"
-            size="icon"
-            onClick={onPreview}
-            className="transform translate-y-4 group-hover:translate-y-0 transition-transform duration-300"
-            title="Visualizar"
+            className="bg-card/90 backdrop-blur-sm hover:bg-card"
+            onClick={(e) => {
+              e.stopPropagation();
+              onPreview();
+            }}
           >
-            <Eye className="w-4 h-4" />
+            <Maximize2 className="w-4 h-4 mr-1" />
+            Expandir
           </Button>
           <Button
-            variant="secondary"
-            size="icon"
-            onClick={() => {
-              // Open in full screen
-              const newWindow = window.open();
-              if (newWindow) {
-                newWindow.document.write(`
-                  <html>
-                    <head><title>${name}</title></head>
-                    <body style="margin:0;background:#0a0a0f;display:flex;justify-content:center;align-items:flex-start;min-height:100vh;">
-                      <img src="${imgSrc}" style="max-width:100%;height:auto;" />
-                    </body>
-                  </html>
-                `);
-              }
+            size="sm"
+            variant="hero"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDownload();
             }}
-            className="transform translate-y-4 group-hover:translate-y-0 transition-transform duration-300 delay-75"
-            title="Tela cheia"
           >
-            <Maximize2 className="w-4 h-4" />
+            <Download className="w-4 h-4 mr-1" />
+            Baixar
           </Button>
         </div>
       </div>
-      
+
       {/* Info bar */}
-      <div className="flex items-center justify-between p-4">
-        <div>
-          <span className="text-xs font-medium text-primary">
-            Seção {index + 1}
-          </span>
-          <h4 className="text-sm font-semibold text-foreground mt-0.5">
-            {name}
-          </h4>
+      <div className="p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary text-xs font-bold">
+              {String(index + 1).padStart(2, "0")}
+            </span>
+            <h3 className="font-medium text-foreground truncate">{name}</h3>
+          </div>
+          
+          {confidence !== undefined && (
+            <div className="flex items-center gap-1">
+              <Sparkles className={`w-3 h-3 ${getConfidenceColor()}`} />
+              <span className={`text-xs font-medium ${getConfidenceColor()}`}>
+                {confidence}%
+              </span>
+            </div>
+          )}
         </div>
         
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onDownload}
-          className="opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-        >
-          <Download className="w-4 h-4" />
-          PNG
-        </Button>
+        <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="px-2 py-0.5 rounded bg-secondary/50">PNG</span>
+          <span className="px-2 py-0.5 rounded bg-secondary/50">HD</span>
+        </div>
       </div>
     </div>
   );

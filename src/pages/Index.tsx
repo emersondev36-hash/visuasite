@@ -74,9 +74,15 @@ export default function Index() {
       setProcessingStep(3);
 
       // Generate section images from the screenshot
+      const rawSections = result.sections || [{ id: "1", name: "Página Completa", type: "full", order: 0, confidence: 100 }];
+      const normalizedSections = rawSections.map((s, i) => ({
+        ...s,
+        order: s.order ?? i,
+        confidence: s.confidence ?? 100,
+      }));
       const sectionImages = generateSectionImages(
         result.screenshot,
-        result.sections || [{ id: "1", name: "Página Completa", type: "full" }]
+        normalizedSections
       );
 
       setSections(sectionImages);
