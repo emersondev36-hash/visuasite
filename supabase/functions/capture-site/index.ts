@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
 
     console.log('Capturing URL:', formattedUrl);
 
-    // Capture full page screenshot with high resolution
+    // Firecrawl v2 API - use formats array with screenshot type
     const response = await fetch('https://api.firecrawl.dev/v1/scrape', {
       method: 'POST',
       headers: {
@@ -69,16 +69,17 @@ Deno.serve(async (req) => {
         url: formattedUrl,
         formats: ['screenshot', 'html'],
         onlyMainContent: false,
-        waitFor: 5000, // Wait for dynamic content to load
-        screenshot: true,
-        fullPageScreenshot: true,
+        waitFor: 5000,
       }),
     });
 
     const data: ScrapeResult = await response.json();
 
+    console.log('Firecrawl response status:', response.status);
+    console.log('Firecrawl data success:', data.success);
+
     if (!response.ok || !data.success) {
-      console.error('Firecrawl API error:', data);
+      console.error('Firecrawl API error:', JSON.stringify(data));
       return new Response(
         JSON.stringify({ 
           success: false, 
@@ -88,17 +89,30 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Get screenshot from response
+    const screenshot = data.data?.screenshot;
+    
+    if (!screenshot) {
+      console.error('No screenshot in response');
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: 'Não foi possível capturar o screenshot do site' 
+        }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Analyze the HTML to detect sections with improved algorithm
     const html = data.data?.html || '';
     const sections = detectSectionsAdvanced(html);
     
     console.log('Capture successful, detected sections:', sections.length);
-    console.log('Section details:', sections.map(s => `${s.name} (${s.confidence}%)`));
 
     return new Response(
       JSON.stringify({
         success: true,
-        screenshot: data.data?.screenshot,
+        screenshot: screenshot,
         sections,
         metadata: {
           title: data.data?.metadata?.title || 'Site',
