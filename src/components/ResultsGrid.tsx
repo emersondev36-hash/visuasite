@@ -1,9 +1,9 @@
-import { Download, Grid3X3, LayoutList, RotateCcw, FileArchive } from "lucide-react";
+import { Download, Grid3X3, LayoutList, RotateCcw, FileArchive, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SectionImage } from "./SectionImage";
 import { useToast } from "@/hooks/use-toast";
-import type { Section } from "@/lib/api/capture";
+import { downloadSection, downloadAllSectionsAsZip, type Section } from "@/lib/api/capture";
 
 interface ResultsGridProps {
   sections: Section[];
@@ -13,44 +13,41 @@ interface ResultsGridProps {
 
 export function ResultsGrid({ sections, siteUrl, onReset }: ResultsGridProps) {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [isDownloading, setIsDownloading] = useState(false);
   const { toast } = useToast();
 
   const handleDownloadAll = async () => {
+    setIsDownloading(true);
     toast({
       title: "Preparando download...",
       description: "Gerando arquivo ZIP com todas as seções",
     });
 
-    // For each section, create download
-    for (const section of sections) {
-      await handleDownloadSection(section);
+    try {
+      await downloadAllSectionsAsZip(sections, siteUrl);
+      toast({
+        title: "Download concluído!",
+        description: `${sections.length} imagens foram baixadas em um arquivo ZIP`,
+      });
+    } catch (error) {
+      console.error('ZIP download error:', error);
+      toast({
+        title: "Erro no download",
+        description: "Não foi possível gerar o arquivo ZIP",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDownloading(false);
     }
-
-    toast({
-      title: "Downloads iniciados!",
-      description: `${sections.length} imagens estão sendo baixadas`,
-    });
   };
 
-  const handleDownloadSection = async (section: Section) => {
+  const handleDownloadSection = (section: Section) => {
     try {
-      const link = document.createElement("a");
-      const fileName = `${section.name.toLowerCase().replace(/\s+/g, "-").replace(/[\/\\]/g, "-")}.png`;
-      
-      if (section.imageUrl.startsWith('data:')) {
-        // Base64 image
-        link.href = section.imageUrl;
-      } else {
-        // Regular URL - fetch and convert to blob
-        const response = await fetch(section.imageUrl);
-        const blob = await response.blob();
-        link.href = URL.createObjectURL(blob);
-      }
-      
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      downloadSection(section);
+      toast({
+        title: "Download iniciado",
+        description: `Baixando ${section.name}`,
+      });
     } catch (error) {
       console.error('Download error:', error);
       toast({
@@ -65,10 +62,54 @@ export function ResultsGrid({ sections, siteUrl, onReset }: ResultsGridProps) {
     const newWindow = window.open();
     if (newWindow) {
       newWindow.document.write(`
+        <!DOCTYPE html>
         <html>
-          <head><title>${section.name} - Visual Site Splitter</title></head>
-          <body style="margin:0;background:#0a0a0f;display:flex;justify-content:center;align-items:flex-start;min-height:100vh;padding:20px;">
-            <img src="${section.imageUrl}" style="max-width:100%;height:auto;border-radius:8px;" />
+          <head>
+            <title>${section.name} - Visual Site Splitter</title>
+            <style>
+              * { margin: 0; padding: 0; box-sizing: border-box; }
+              body { 
+                background: #0a0a0f; 
+                min-height: 100vh; 
+                display: flex; 
+                justify-content: center; 
+                align-items: flex-start;
+                padding: 40px 20px;
+              }
+              img { 
+                max-width: 100%; 
+                height: auto; 
+                border-radius: 12px;
+                box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+              }
+              .info {
+                position: fixed;
+                top: 20px;
+                left: 20px;
+                background: rgba(15, 15, 23, 0.9);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                padding: 12px 16px;
+                border-radius: 8px;
+                color: white;
+                font-family: system-ui, -apple-system, sans-serif;
+                font-size: 14px;
+              }
+              .badge {
+                display: inline-block;
+                background: linear-gradient(135deg, #a855f7, #6366f1);
+                padding: 2px 8px;
+                border-radius: 4px;
+                font-size: 12px;
+                margin-left: 8px;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="info">
+              ${section.name}
+              <span class="badge">${section.confidence}% confiança</span>
+            </div>
+            <img src="${section.imageUrl}" alt="${section.name}" />
           </body>
         </html>
       `);
@@ -86,6 +127,11 @@ export function ResultsGrid({ sections, siteUrl, onReset }: ResultsGridProps) {
     }
   })();
 
+  // Calculate total confidence
+  const avgConfidence = sections.length > 0
+    ? Math.round(sections.reduce((sum, s) => sum + (s.confidence || 100), 0) / sections.length)
+    : 0;
+
   return (
     <div className="w-full max-w-6xl mx-auto animate-fade-in">
       {/* Header */}
@@ -96,7 +142,7 @@ export function ResultsGrid({ sections, siteUrl, onReset }: ResultsGridProps) {
           </h2>
           <p className="text-muted-foreground mt-1">
             {sections.length} seção(ões) encontrada(s) em{" "}
-            <span className="text-primary font-medium">{siteUrl}</span>
+            <span className="text-primary font-medium">{displayUrl}</span>
           </p>
         </div>
 
@@ -132,9 +178,17 @@ export function ResultsGrid({ sections, siteUrl, onReset }: ResultsGridProps) {
             Nova URL
           </Button>
 
-          <Button variant="hero" onClick={handleDownloadAll}>
-            <FileArchive className="w-4 h-4" />
-            Baixar Todas
+          <Button 
+            variant="hero" 
+            onClick={handleDownloadAll}
+            disabled={isDownloading}
+          >
+            {isDownloading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <FileArchive className="w-4 h-4" />
+            )}
+            {isDownloading ? 'Gerando...' : 'Baixar ZIP'}
           </Button>
         </div>
       </div>
@@ -153,6 +207,7 @@ export function ResultsGrid({ sections, siteUrl, onReset }: ResultsGridProps) {
             name={section.name}
             imageUrl={section.imageUrl}
             index={index}
+            confidence={section.confidence}
             onPreview={() => handlePreview(section)}
             onDownload={() => handleDownloadSection(section)}
           />
@@ -174,8 +229,8 @@ export function ResultsGrid({ sections, siteUrl, onReset }: ResultsGridProps) {
             <p className="text-2xl font-bold text-foreground">PNG</p>
           </div>
           <div>
-            <p className="text-sm text-muted-foreground">Resolução</p>
-            <p className="text-2xl font-bold text-foreground">HD</p>
+            <p className="text-sm text-muted-foreground">Confiança Média</p>
+            <p className="text-2xl font-bold text-foreground">{avgConfidence}%</p>
           </div>
           <div>
             <p className="text-sm text-muted-foreground">Status</p>
