@@ -61,6 +61,7 @@ export function ResultsGrid({ sections, siteUrl, onReset }: ResultsGridProps) {
   const handlePreview = (section: Section) => {
     const newWindow = window.open();
     if (newWindow) {
+      const heightInfo = section.estimatedHeight ? `${section.estimatedHeight.toFixed(1)}% da página` : '';
       newWindow.document.write(`
         <!DOCTYPE html>
         <html>
@@ -86,30 +87,99 @@ export function ResultsGrid({ sections, siteUrl, onReset }: ResultsGridProps) {
                 position: fixed;
                 top: 20px;
                 left: 20px;
-                background: rgba(15, 15, 23, 0.9);
+                background: rgba(15, 15, 23, 0.95);
                 border: 1px solid rgba(255, 255, 255, 0.1);
-                padding: 12px 16px;
-                border-radius: 8px;
+                padding: 16px 20px;
+                border-radius: 12px;
                 color: white;
                 font-family: system-ui, -apple-system, sans-serif;
                 font-size: 14px;
+                backdrop-filter: blur(10px);
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+              }
+              .title {
+                font-size: 16px;
+                font-weight: 600;
+              }
+              .badges {
+                display: flex;
+                gap: 8px;
+                flex-wrap: wrap;
               }
               .badge {
                 display: inline-block;
                 background: linear-gradient(135deg, #a855f7, #6366f1);
-                padding: 2px 8px;
-                border-radius: 4px;
+                padding: 4px 10px;
+                border-radius: 6px;
                 font-size: 12px;
-                margin-left: 8px;
+                font-weight: 500;
+              }
+              .badge-secondary {
+                background: rgba(255, 255, 255, 0.1);
+              }
+              .actions {
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                display: flex;
+                gap: 8px;
+              }
+              .btn {
+                background: rgba(168, 85, 247, 0.9);
+                color: white;
+                border: none;
+                padding: 10px 16px;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: 500;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                transition: all 0.2s;
+              }
+              .btn:hover {
+                background: rgba(168, 85, 247, 1);
+                transform: translateY(-1px);
+              }
+              .btn-secondary {
+                background: rgba(255, 255, 255, 0.1);
+              }
+              .btn-secondary:hover {
+                background: rgba(255, 255, 255, 0.2);
               }
             </style>
           </head>
           <body>
             <div class="info">
-              ${section.name}
-              <span class="badge">${section.confidence}% confiança</span>
+              <div class="title">${section.name}</div>
+              <div class="badges">
+                <span class="badge">${section.confidence}% confiança</span>
+                ${heightInfo ? `<span class="badge badge-secondary">${heightInfo}</span>` : ''}
+                <span class="badge badge-secondary">PNG HD</span>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="btn btn-secondary" onclick="window.close()">
+                ✕ Fechar
+              </button>
+              <button class="btn" onclick="downloadImage()">
+                ↓ Baixar
+              </button>
             </div>
             <img src="${section.imageUrl}" alt="${section.name}" />
+            <script>
+              function downloadImage() {
+                const link = document.createElement('a');
+                link.href = '${section.imageUrl}';
+                link.download = '${section.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.png';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+              }
+            </script>
           </body>
         </html>
       `);
@@ -208,6 +278,8 @@ export function ResultsGrid({ sections, siteUrl, onReset }: ResultsGridProps) {
             imageUrl={section.imageUrl}
             index={index}
             confidence={section.confidence}
+            estimatedHeight={section.estimatedHeight}
+            type={section.type}
             onPreview={() => handlePreview(section)}
             onDownload={() => handleDownloadSection(section)}
           />
