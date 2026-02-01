@@ -31,10 +31,21 @@ export interface CaptureResult {
   error?: string;
 }
 
-export async function captureSite(url: string): Promise<CaptureResult> {
+export interface ViewportOptions {
+  width?: number;
+  height?: number;
+}
+
+export async function captureSite(
+  url: string, 
+  viewport?: ViewportOptions
+): Promise<CaptureResult> {
   try {
     const { data, error } = await supabase.functions.invoke('capture-site', {
-      body: { url },
+      body: { 
+        url,
+        viewport: viewport || { width: 1440, height: 900 },
+      },
     });
 
     if (error) {

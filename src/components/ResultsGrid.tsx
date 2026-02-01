@@ -1,4 +1,4 @@
-import { Download, Grid3X3, LayoutList, RotateCcw, FileArchive, Loader2 } from "lucide-react";
+import { Download, Grid3X3, LayoutList, RotateCcw, FileArchive, Loader2, Scissors, Columns2 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { SectionImage } from "./SectionImage";
@@ -9,9 +9,19 @@ interface ResultsGridProps {
   sections: Section[];
   siteUrl: string;
   onReset: () => void;
+  onEditCuts?: () => void;
+  onCompare?: () => void;
+  hasScreenshot?: boolean;
 }
 
-export function ResultsGrid({ sections, siteUrl, onReset }: ResultsGridProps) {
+export function ResultsGrid({ 
+  sections, 
+  siteUrl, 
+  onReset, 
+  onEditCuts, 
+  onCompare,
+  hasScreenshot = false,
+}: ResultsGridProps) {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [isDownloading, setIsDownloading] = useState(false);
   const { toast } = useToast();
@@ -216,7 +226,7 @@ export function ResultsGrid({ sections, siteUrl, onReset }: ResultsGridProps) {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {/* View toggle */}
           <div className="flex items-center p-1 rounded-lg bg-secondary/50 border border-border/50">
             <button
@@ -243,9 +253,25 @@ export function ResultsGrid({ sections, siteUrl, onReset }: ResultsGridProps) {
             </button>
           </div>
 
+          {/* Edit cuts button */}
+          {hasScreenshot && onEditCuts && (
+            <Button variant="outline" onClick={onEditCuts}>
+              <Scissors className="w-4 h-4" />
+              <span className="hidden sm:inline">Editar Cortes</span>
+            </Button>
+          )}
+
+          {/* Compare button */}
+          {hasScreenshot && onCompare && (
+            <Button variant="outline" onClick={onCompare}>
+              <Columns2 className="w-4 h-4" />
+              <span className="hidden sm:inline">Comparar</span>
+            </Button>
+          )}
+
           <Button variant="outline" onClick={onReset}>
             <RotateCcw className="w-4 h-4" />
-            Nova URL
+            <span className="hidden sm:inline">Nova URL</span>
           </Button>
 
           <Button 
