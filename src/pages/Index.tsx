@@ -1,10 +1,13 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { Scissors, Image, Zap, Shield, Sparkles, AlertCircle } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { UrlInput } from "@/components/UrlInput";
 import { FeatureCard } from "@/components/FeatureCard";
 import { ProcessingState } from "@/components/ProcessingState";
 import { ResultsGrid } from "@/components/ResultsGrid";
+import { CutPointEditor } from "@/components/CutPointEditor";
+import { ComparisonView } from "@/components/ComparisonView";
+import { ViewportSelector, type ViewportSize, getViewportDimensions } from "@/components/ViewportSelector";
 import { useToast } from "@/hooks/use-toast";
 import { captureSite, generateSectionImages, type Section } from "@/lib/api/capture";
 
@@ -38,8 +41,20 @@ export default function Index() {
   const [currentUrl, setCurrentUrl] = useState("");
   const [processingStep, setProcessingStep] = useState(0);
   const [sections, setSections] = useState<Section[]>([]);
+  const [originalScreenshot, setOriginalScreenshot] = useState<string>("");
+  const [originalSections, setOriginalSections] = useState<Array<{
+    id: string;
+    name: string;
+    type: string;
+    order: number;
+    confidence: number;
+    estimatedHeight?: number;
+  }>>([]);
   const [errorMessage, setErrorMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [viewport, setViewport] = useState<ViewportSize>("desktop");
+  const [showCutEditor, setShowCutEditor] = useState(false);
+  const [showComparison, setShowComparison] = useState(false);
   const { toast } = useToast();
 
   const handleSubmit = useCallback(async (url: string) => {
@@ -49,13 +64,13 @@ export default function Index() {
     setIsLoading(true);
     setErrorMessage("");
 
-    // Simulate processing steps while waiting for API
     const stepInterval = setInterval(() => {
       setProcessingStep((prev) => Math.min(prev + 1, 2));
     }, 1500);
 
     try {
-      const result = await captureSite(url);
+      const viewportDimensions = getViewportDimensions(viewport);
+      const result = await captureSite(url, viewportDimensions);
 
       clearInterval(stepInterval);
 
@@ -70,10 +85,9 @@ export default function Index() {
         return;
       }
 
-      // Move to final step
       setProcessingStep(3);
+      setOriginalScreenshot(result.screenshot);
 
-      // Generate section images from the screenshot
       const rawSections = result.sections || [{ id: "1", name: "Página Completa", type: "full", order: 0, confidence: 100 }];
       const normalizedSections = rawSections.map((s, i) => ({
         ...s,
@@ -81,7 +95,8 @@ export default function Index() {
         confidence: s.confidence ?? 100,
       }));
       
-      // Await the async slicing operation
+      setOriginalSections(normalizedSections);
+      
       const sectionImages = await generateSectionImages(
         result.screenshot,
         normalizedSections
@@ -109,16 +124,56 @@ export default function Index() {
     } finally {
       setIsLoading(false);
     }
-  }, [toast]);
+  }, [toast, viewport]);
 
   const handleReset = useCallback(() => {
     setAppState("input");
     setCurrentUrl("");
     setProcessingStep(0);
     setSections([]);
+    setOriginalScreenshot("");
+    setOriginalSections([]);
     setErrorMessage("");
     setIsLoading(false);
+    setShowCutEditor(false);
+    setShowComparison(false);
   }, []);
+
+  const handleSaveCutPoints = useCallback(async (updatedSections: Section[]) => {
+    if (!originalScreenshot) return;
+
+    toast({
+      title: "Aplicando cortes...",
+      description: "Regenerando imagens com os novos pontos de corte",
+    });
+
+    try {
+      const sectionData = updatedSections.map(s => ({
+        id: s.id,
+        name: s.name,
+        type: s.type,
+        order: s.order,
+        confidence: s.confidence,
+        estimatedHeight: s.estimatedHeight,
+      }));
+
+      const newSectionImages = await generateSectionImages(originalScreenshot, sectionData);
+      setSections(newSectionImages);
+      setShowCutEditor(false);
+
+      toast({
+        title: "Cortes aplicados!",
+        description: `${newSectionImages.length} seções foram regeneradas com sucesso.`,
+      });
+    } catch (error) {
+      console.error("Error applying cut points:", error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível aplicar os novos cortes",
+        variant: "destructive",
+      });
+    }
+  }, [originalScreenshot, toast]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -156,11 +211,21 @@ export default function Index() {
                   perfeitas
                 </h1>
                 
-                <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-10">
+                <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-8">
                   Cole uma URL e receba múltiplas imagens em alta resolução, 
                   cada uma representando uma seção clara do site. Perfeito para 
                   análise, redesign ou documentação.
                 </p>
+
+                {/* Viewport selector */}
+                <div className="flex items-center justify-center gap-4 mb-8">
+                  <span className="text-sm text-muted-foreground">Resolução:</span>
+                  <ViewportSelector 
+                    selected={viewport} 
+                    onChange={setViewport}
+                    disabled={isLoading}
+                  />
+                </div>
 
                 <UrlInput onSubmit={handleSubmit} isLoading={isLoading} />
               </div>
@@ -244,6 +309,9 @@ export default function Index() {
               sections={sections}
               siteUrl={currentUrl}
               onReset={handleReset}
+              onEditCuts={() => setShowCutEditor(true)}
+              onCompare={() => setShowComparison(true)}
+              hasScreenshot={!!originalScreenshot}
             />
           )}
         </main>
@@ -258,6 +326,25 @@ export default function Index() {
           </div>
         </footer>
       </div>
+
+      {/* Cut Point Editor Modal */}
+      {showCutEditor && originalScreenshot && (
+        <CutPointEditor
+          screenshot={originalScreenshot}
+          sections={sections}
+          onSave={handleSaveCutPoints}
+          onCancel={() => setShowCutEditor(false)}
+        />
+      )}
+
+      {/* Comparison View Modal */}
+      {showComparison && originalScreenshot && (
+        <ComparisonView
+          screenshot={originalScreenshot}
+          sections={sections}
+          onClose={() => setShowComparison(false)}
+        />
+      )}
     </div>
   );
 }
